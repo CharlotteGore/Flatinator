@@ -2,7 +2,6 @@
 
 var program = require('commander');
 var uglify = require('uglify-js');
-var spawner = require('../lib/spawner');
 var path = require('path');
 var fs = require('fs');
 var colors = require('colors');
@@ -42,8 +41,6 @@ if (program.entry){
 
   var srcPath = path.relative(process.cwd(), path.resolve(program.entry));
 
-  console.log(srcPath);
-
   fs.readFile(srcPath, 'utf8', function(err, data){
 
     var ast, walker, newAST, req, anon, body, entry;
@@ -53,9 +50,9 @@ if (program.entry){
 
     } else {
       ast = uglify.parse(data);
-      req = uglify.parse(fs.readFileSync('./lib/require.js', 'utf8'));
-      anon = uglify.parse(fs.readFileSync('./lib/anonymous.js', 'utf8'));
-      entry = uglify.parse(fs.readFileSync('./lib/call.js', 'utf8'));
+      req = uglify.parse(fs.readFileSync(__dirname + '/../lib/require.js', 'utf8'));
+      anon = uglify.parse(fs.readFileSync(__dirname + '/../lib/anonymous.js', 'utf8'));
+      entry = uglify.parse(fs.readFileSync(__dirname + '/../lib/call.js', 'utf8'));
 
       var modules = {};
       var calls = {};

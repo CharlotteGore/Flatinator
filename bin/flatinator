@@ -1,0 +1,169 @@
+#!/usr/bin/env node
+
+var program = require('commander');
+var uglify = require('uglify-js');
+var spawner = require('../lib/spawner');
+var path = require('path');
+var fs = require('fs');
+var colors = require('colors');
+
+
+program
+  .version(require('../package').version)
+  .usage('[options]');
+
+// sub-command help
+
+program
+  .option('-e, --entry <file>', 'input file, defaulting to ./build/build.js', './build/build.js')
+  .option('-o, --out <dir>', 'output directory defaulting to ./build', './build')
+  .option('-n, --name <file>', 'base name for build files defaulting to rebuild', 'rebuild')
+  .option('-a, --app <module>', 'App mode - wrap in anonymous function and add call to <module>')
+
+// examples
+
+program.on('--help', function(){
+  console.log('  Examples:');
+  console.log();
+  console.log('    # Flatten ./build/build.js to ./build/rebuild.js');
+  console.log('    $ hyperbone-build');
+  console.log();
+  console.log('    # Flatten ./build/output.js to ./public/js/app.js');
+  console.log('    $ hyperbone-build -e ./build/output.js -o ./public/js -n app');
+  console.log();
+  console.log('    # Wrap in anonymous function and add a call to a module');
+  console.log('    $ hyperbone-build --app mymodule');
+  console.log();
+});
+
+program.parse(process.argv);
+
+if (program.entry){
+
+  var srcPath = path.relative(process.cwd(), path.resolve(program.entry));
+
+  console.log(srcPath);
+
+  fs.readFile(srcPath, 'utf8', function(err, data){
+
+    var ast, walker, newAST, req, anon, body, entry;
+
+    if (err){
+      throw new Error(err);
+
+    } else {
+      ast = uglify.parse(data);
+      req = uglify.parse(fs.readFileSync('./lib/require.js', 'utf8'));
+      anon = uglify.parse(fs.readFileSync('./lib/anonymous.js', 'utf8'));
+      entry = uglify.parse(fs.readFileSync('./lib/call.js', 'utf8'));
+
+      var modules = {};
+      var calls = {};
+      var matches = {};
+      var aliases = [];
+
+      var exceptions = [];
+
+      if (!program.app){
+        newAST = req;
+        body = newAST.body;
+      } else {
+        newAST = anon;
+        body = newAST.body[0].body.expression.body;
+        body.push(req);
+        entry.body[0].body.args[0].value = program.app;
+        calls[program.app] = [];
+        calls[program.app].push(entry);
+      }
+
+      walker = new uglify.TreeWalker(function(node){
+
+        var val;
+
+        if (node instanceof uglify.AST_Call){
+          if(node.args && node.args[0]){
+            val = node.args[0].value;
+          }
+          if (node.start.value == "require" && node.expression.property == "register"){
+            body.push(node);
+            modules[val] = node;
+          }else if (node.start.value == "require" && node.expression.property != 'alias' && val){
+            if(!calls[val]){
+              calls[val] = [];
+            }
+            calls[val].push(node);
+          }
+        }
+
+      });
+
+      ast.walk(walker);
+
+      for(var call in calls){
+        if(!matches[call]){
+          matches[call] = [];
+        }
+        for(var mod in modules){
+          if((mod).indexOf(('-' + call + "/")) != -1 || (mod).indexOf((call + "/")) === 0 || (mod).indexOf((call + ".js")) != -1){
+            matches[call].push(modules[mod]);
+          }
+        }
+        if(matches[call].length == 0){
+
+          console.log('No module found for ' + call.red);
+          var possibles = [];
+
+          for(var mod in modules){
+            
+            if( mod.indexOf(call) != -1){
+              console.log('Possible match - ' + mod.red);
+              possibles.push(modules[mod]);
+            }
+          }
+
+          if (possibles.length == 1){
+            console.log('Only one match. Will rename module to ' + call.green);
+            matches[call].push(possibles[0]);
+          } else {
+            console.log('Unable to find the best match. Aborting!'.red);
+            //process.exit();
+          }
+          
+
+        }else if(matches[call].length > 1){
+          console.log("Warning! Multiple matching modules found for " + call.red)
+          matches[call].forEach(function(el){
+            console.log('Matched: ' + el.args[0].value.red);
+          })
+        }
+      }
+
+      for(var match in matches){
+        if(matches[match].length == 1){
+          console.log('Mapping ' + matches[match][0].args[0].value.green + " to " + match.red);
+          matches[match][0].args[0].value = match;
+        }
+      }
+
+      body.push(entry);
+
+      var stream = uglify.OutputStream({comments : true, beautify : true, indent_level : 2, semicolons: false});
+      newAST.print(stream);
+      var output = stream.toString();
+
+
+      fs.writeFile(path.resolve(process.cwd(), program.out, program.name + ".js"), stream.toString(), function(err){
+
+        if (err){
+          console.log("Unable to write output file");
+        } else {
+
+          console.log("Done!");
+        }
+
+      });
+    }
+
+  });
+
+}

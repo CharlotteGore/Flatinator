@@ -14,7 +14,7 @@ program
 // sub-command help
 
 program
-  .option('-e, --entry <file>', 'input file, defaulting to ./build/build.js', './build/build.js')
+  .option('-i, --input <file>', 'input file, defaulting to ./build/build.js', './build/build.js')
   .option('-o, --out <dir>', 'output directory defaulting to ./build', './build')
   .option('-n, --name <file>', 'base name for build files defaulting to rebuild', 'rebuild')
   .option('-a, --app <module>', 'App mode - wrap in anonymous function and add call to <module>')
@@ -25,27 +25,29 @@ program.on('--help', function(){
   console.log('  Examples:');
   console.log();
   console.log('    # Flatten ./build/build.js to ./build/rebuild.js');
-  console.log('    $ hyperbone-build');
+  console.log('    $ flatinator');
   console.log();
   console.log('    # Flatten ./build/output.js to ./public/js/app.js');
-  console.log('    $ hyperbone-build -e ./build/output.js -o ./public/js -n app');
+  console.log('    $ flatinator -i ./build/output.js -o ./public/js -n app');
   console.log();
-  console.log('    # Wrap in anonymous function and add a call to a module');
-  console.log('    $ hyperbone-build --app mymodule');
+  console.log('    # Wrap in anonymous function and add require("mymodule")');
+  console.log('    $ flatinator --app mymodule');
   console.log();
 });
 
 program.parse(process.argv);
 
-if (program.entry){
+if (program.input){
 
-  var srcPath = path.relative(process.cwd(), path.resolve(program.entry));
+  var srcPath = path.relative(process.cwd(), path.resolve(program.input));
 
   fs.readFile(srcPath, 'utf8', function(err, data){
 
     var ast, walker, newAST, req, anon, body, entry;
 
     if (err){
+
+      console.log('Error'.red + " Unable to open " + srcPath);
       throw new Error(err);
 
     } else {
@@ -58,6 +60,7 @@ if (program.entry){
       var calls = {};
       var matches = {};
       var aliases = [];
+      var issues = [];
 
       var exceptions = [];
 
@@ -107,40 +110,42 @@ if (program.entry){
         }
         if(matches[call].length == 0){
 
-          console.log('No module found for ' + call.red);
           var possibles = [];
 
           for(var mod in modules){
             
             if( mod.indexOf(call) != -1){
-              console.log('Possible match - ' + mod.red);
               possibles.push(modules[mod]);
             }
           }
 
           if (possibles.length == 1){
-            console.log('Only one match. Will rename module to ' + call.green);
             matches[call].push(possibles[0]);
           } else {
-            console.log('Unable to find the best match. Aborting!'.red);
             //process.exit();
+            issues.push('Warning:'.yellow + " Cannot find module for " + call.red)
           }
           
 
         }else if(matches[call].length > 1){
-          console.log("Warning! Multiple matching modules found for " + call.red)
-          matches[call].forEach(function(el){
-            console.log('Matched: ' + el.args[0].value.red);
-          })
+          issues.push("Warning:".yellow + " Multiple matching modules found for " + call.red);
         }
       }
 
       for(var match in matches){
         if(matches[match].length == 1){
-          console.log('Mapping ' + matches[match][0].args[0].value.green + " to " + match.red);
+          console.log('Renaming ' + matches[match][0].args[0].value.red + " to " + match.green);
           matches[match][0].args[0].value = match;
         }
       }
+
+      issues.forEach(function(issue){
+
+        console.log(issue);
+
+      })
+
+      console.log('Generating ' + (program.name + "js").green + " ...");
 
       body.push(entry);
 
@@ -152,10 +157,18 @@ if (program.entry){
       fs.writeFile(path.resolve(process.cwd(), program.out, program.name + ".js"), stream.toString(), function(err){
 
         if (err){
-          console.log("Unable to write output file");
+
+          console.log("Error:".red + " Unable to write output file.");
+
+          throw new Error(err);
+          
+          process.exit(1);
+
         } else {
 
-          console.log("Done!");
+          console.log("Success!".green);
+          process.exit(0);
+
         }
 
       });

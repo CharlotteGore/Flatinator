@@ -147,7 +147,9 @@ if (program.input){
 
       console.log('Generating ' + (program.name + "js").green + " ...");
 
-      body.push(entry);
+      if(program.app){
+        body.push(entry)
+      }
 
       var stream = uglify.OutputStream({comments : true, beautify : true, indent_level : 2, semicolons: false});
       newAST.print(stream);

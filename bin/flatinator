@@ -84,15 +84,19 @@ if (program.input){
           if(node.args && node.args[0]){
             val = node.args[0].value;
           }
-          if (node.start.value == "require" && node.expression.property == "register"){
-            body.push(node);
-            modules[val] = node;
-          }else if (node.start.value == "require" && node.expression.property != 'alias' && val){
-            if(!calls[val]){
+          if (node.expression.end.value == "require" && val){
+            // calls to require
+            if (!calls[val]){
               calls[val] = [];
             }
             calls[val].push(node);
+          
+          }else if(node.expression.start.value == "require" && node.expression.property == "register"){
+            // calls to require.register
+            body.push(node);
+            modules[val] = node;
           }
+
         }
 
       });
@@ -109,6 +113,8 @@ if (program.input){
           }
         }
         if(matches[call].length == 0){
+
+          console.log('On initial pass, no module found for ' + call);
 
           var possibles = [];
 

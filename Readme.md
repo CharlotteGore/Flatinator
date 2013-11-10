@@ -6,22 +6,19 @@
 
 Sadly the build tool has a few quirks and issues but the most troubling is the size of the build files. One very large project I'm working on has over 50 components (a combination of local and remote). This, it turns out, generates **190kb** of calls to `require.alias()` and because most of those calls are very long strings this bulk remains in the minified version.
 
-## Flatinator: A Blunt Instrument
+## Flatinator: Not a blunt instrument
 
-Flatinator is a blunt instrument. It rips out the 'local require' stuff. Once a Component has been installed, e.g., `component install component/dom`, any Component can successfully `require("dom")`. It changes the internal names of modules from `component-dom/index.js` to `dom`. This greatly simplifies finding modules and means a smaller implementation of require. 
+Flatinator can feel like blunt instrument. It removes:
+
+- local require: all modules become globally available to all other modules
+- require.alias calls: all modules are renamed to what they're called with. 'green-mesa-hyperbone-model/index.js' becomes 'hyperbone-model' 
+- support for namespacing. All the above means modules have to have a unique name. You can't `require('event')` in module a and `require('event')` in module b and have those requires point to different Components. Sorry.
+
+But really, under that menacing vicious exterior it works at the AST level to delicately manipulate and understand your build. In effect all require resolves are done at Flatinator time, not run time. If the build.js is compatible, hurray! You can flatinate it and enjoy simpler, smaller builds.
 
 ## Flatinator: It Does Post-Processing
 
 Flatinator is a post-processing step for Component build. It takes the output of Component and gets rid of as much junk as it can by working at the AST level for maximum safety.
-
-## Flatinator: IT MAY BREAK YOUR STUFF
-
-Flatinator does not wish to break your stuff and it tries very hard not to. However, the downside of removing local require and aliases is that you lose the namespace stuff. Flatinator has made a compelling case that for most projects, you don't actually need namespacing. However, because it's a post-processing step if you ever need the Full Component Build experience you just stop using Flatinator. It'll make Flatinator cry, but frankly your code comes first. 
-
-But here's some handy rules:
-
-- All module names must be unique
-- Seriously. All module names must be unique.
 
 ## Flatinator: IT MAY MAKE YOUR STUFF WORK!
 
@@ -59,10 +56,10 @@ $ flatinator
 
 ### Enflatten something in a strange location
 
-The `-e` option lets you specify an input file. This example processes crazy-build-lcoation/ermahgod.js and dumps the output in build/rebuild.js.
+The `-i` or `--input` option lets you specify an input build file. This example processes crazy-build-lcoation/ermahgod.js and dumps the output in build/rebuild.js.
 
 ```sh
-$ flatinator -e crazy-build-location/ermahgod.js
+$ flatinator -i crazy-build-location/ermahgod.js
 ```
 
 ### Put the Enflattened file in a strange location

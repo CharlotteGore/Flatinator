@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+
+var startTime = (new Date()).getTime();
+
 var program = require('commander');
 var uglify = require('uglify-js');
 var path = require('path');
@@ -91,10 +94,20 @@ if (program.input){
             }
             calls[val].push(node);
           
-          }else if(node.expression.start.value == "require" && node.expression.property == "register"){
+          }else if (node.expression.start.value == "require" && node.expression.property == "register"){
             // calls to require.register
             body.push(node);
             modules[val] = node;
+          } else if (node.expression.start.value == "require" && node.expression.property == "alias"){
+            var segs = node.args[1].value.split('/');
+            var name = segs[segs.length -2];
+            if (!aliases.hasOwnProperty(name)){
+              aliases[name] = node.args[0].value;
+            }else if (aliases[name]!== node.args[0].value ){
+              console.log('Error'.red + " More than one module has the canoncial name " + name.yellow);
+              console.log('    ' + aliases[name].red);
+              console.log('    ' + node.args[0].value );
+            }
           }
 
         }
@@ -103,78 +116,111 @@ if (program.input){
 
       ast.walk(walker);
 
+      console.log();
+      console.log('    Processing internal require() calls...'.cyan);
+      console.log();
+
       for(var call in calls){
-        if(!matches[call]){
-          matches[call] = [];
-        }
-        for(var mod in modules){
-          if((mod).indexOf(('-' + call + "/")) != -1 || (mod).indexOf((call + "/")) === 0 || (mod).indexOf((call + ".js")) != -1){
-            matches[call].push(modules[mod]);
-          }
-        }
-        if(matches[call].length == 0){
 
-          console.log('On initial pass, no module found for ' + call);
+        if(aliases.hasOwnProperty(call) && modules[ aliases[call] ]){
 
-          var possibles = [];
+          console.log('        Resolved:'.green  + " " + aliases[call].cyan + " renamed " + call.cyan );
+          modules[ aliases[call] ].args[0].value = call;
+          modules[ aliases[call] ].resolved = true;
 
+        }else{
+          // if we're doing --app blah then that becomes an internal require() call, but probably doesn't have any alias data.
+          var candidates = [];
           for(var mod in modules){
-            
-            if( mod.indexOf(call) != -1){
-              possibles.push(modules[mod]);
+            if ((mod).indexOf(('-' + call + "/")) != -1 || (mod).indexOf((call + "/")) === 0 || (mod).indexOf((call + ".js")) != -1){
+              candidates.push(mod);
             }
           }
-
-          if (possibles.length == 1){
-            matches[call].push(possibles[0]);
+          if (candidates.length === 1){
+            aliases[call] = candidates[0];
+            console.log('        Resolved:'.green  + " " + aliases[call].cyan + " renamed " + call.cyan );
+            modules[ aliases[call] ].args[0].value = call;
+            modules[ aliases[call] ].resolved = true;
           } else {
-            //process.exit();
-            issues.push('Warning:'.yellow + " Cannot find module for " + call.red)
+            console.log('        Error'.red);
           }
-          
 
-        }else if(matches[call].length > 1){
-          issues.push("Warning:".yellow + " Multiple matching modules found for " + call.red);
         }
+
       }
 
-      for(var match in matches){
-        if(matches[match].length == 1){
-          console.log('Renaming ' + matches[match][0].args[0].value.red + " to " + match.green);
-          matches[match][0].args[0].value = match;
+      console.log();
+      console.log('    Processing modules not called internally...'.cyan);
+      console.log();
+
+      var count = 0;
+
+      for(var mod in modules){
+        if(!modules[mod].resolved){
+          count ++;
+          var segs = mod.split('/');
+          name = segs[0];
+          if(name){
+            console.log('        Resolved:'.green + " " + mod.cyan + " renamed " + name.cyan );
+            console.log();
+            modules[mod].args[0].value = name;
+          }else{
+            console.log();
+            console.log('        Ignoring:'.red + " " + mod.cyan + " remains " + mod.cyan );
+            console.log();
+          }
         }
+      }
+      if(count===0){
+
+        console.log('        No orphan modules found. Hurrah!');
+
       }
 
       issues.forEach(function(issue){
 
         console.log(issue);
 
-      })
+      });
 
-      console.log('Generating ' + (program.name + "js").green + " ...");
+      console.log();
+      console.log('    Generating code...'.cyan);
+      console.log();
+
+      var time = (new Date).getTime();
 
       if(program.app){
         body.push(entry)
       }
 
-      var stream = uglify.OutputStream({comments : true, beautify : true, indent_level : 2, semicolons: false});
+      var stream = uglify.OutputStream({comments : true, beautify : true, indent_level : 2, semicolons: false });
       newAST.print(stream);
       var output = stream.toString();
 
+      if(output){
+        console.log('        Completed in ' + ((new Date).getTime() - time) + "ms");
+        console.log();
+      }
 
+      time = (new Date).getTime();
+
+      console.log('    Writing to file... '.cyan);
+      console.log();
       fs.writeFile(path.resolve(process.cwd(), program.out, program.name + ".js"), stream.toString(), function(err){
 
         if (err){
 
-          console.log("Error:".red + " Unable to write output file.");
-
-          throw new Error(err);
-          
+          console.log("    Error:".red + " Unable to write output file. (" + ((new Date().getTime()) - startTime) + "ms)");
+          console.log();
           process.exit(1);
 
         } else {
 
-          console.log("Success!".green);
+          console.log("        File " + path.resolve(process.cwd(), program.out, program.name + ".js") + " written successfully");
+          console.log();
+
+          console.log("    Done in ".cyan + ((new Date().getTime()) - startTime).toString().cyan + "ms".cyan);
+          console.log();
           process.exit(0);
 
         }
